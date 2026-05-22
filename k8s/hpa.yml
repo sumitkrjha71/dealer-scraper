@@ -1,0 +1,47 @@
+---
+# Scale workers based on BullMQ queue depth via KEDA (Kubernetes Event-driven Autoscaling)
+# Install KEDA: https://keda.sh/docs/latest/deploy/
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: dealer-scraper-workers-scaler
+spec:
+  scaleTargetRef:
+    name: dealer-scraper-workers
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  cooldownPeriod: 120
+  triggers:
+    # Scale up when screenshot queue is deep
+    - type: redis
+      metadata:
+        address: redis-service:6379
+        listName: "bull:screenshot-capture:wait"
+        listLength: "50"  # 1 worker per 50 waiting screenshot jobs
+    # Also respond to dealer discovery queue
+    - type: redis
+      metadata:
+        address: redis-service:6379
+        listName: "bull:dealer-discovery:wait"
+        listLength: "20"
+
+---
+# Fallback HPA for API (CPU-based)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dealer-scraper-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dealer-scraper-api
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

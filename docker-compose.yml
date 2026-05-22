@@ -1,0 +1,89 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dealer_scraper
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: node dist/api/server.js
+    ports:
+      - "3001:3001"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/dealer_scraper
+      REDIS_URL: redis://redis:6379
+      SCREENSHOTS_DIR: /data/screenshots
+      STORAGE_PROVIDER: local
+    volumes:
+      - screenshots:/data/screenshots
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  workers:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: node dist/workers/worker-manager.js
+    deploy:
+      replicas: 2
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/dealer_scraper
+      REDIS_URL: redis://redis:6379
+      MAX_BROWSERS: "3"
+      DEALER_WORKER_CONCURRENCY: "10"
+      SCREENSHOT_WORKER_CONCURRENCY: "20"
+      SCREENSHOTS_DIR: /data/screenshots
+      STORAGE_PROVIDER: local
+    volumes:
+      - screenshots:/data/screenshots
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # Shared memory required for Chromium sandbox
+    shm_size: '2gb'
+
+volumes:
+  postgres_data:
+  redis_data:
+  screenshots:

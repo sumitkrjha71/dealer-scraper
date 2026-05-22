@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+dashboard/node_modules/
+
+# Build output
+dist/
+dashboard/.next/
+dashboard/out/
+
+# Environment — never commit secrets
+.env
+dashboard/.env.local
+
+# Screenshots — stored locally or on S3, not in git
+screenshots/
+
+# Logs
+*.log
+pino-*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/

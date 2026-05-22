@@ -1,0 +1,143 @@
+---
+# ─── API Deployment ─────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dealer-scraper-api
+  labels:
+    app: dealer-scraper
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dealer-scraper
+      component: api
+  template:
+    metadata:
+      labels:
+        app: dealer-scraper
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: your-registry/dealer-scraper:latest
+          command: ["node", "dist/api/server.js"]
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: dealer-scraper-secrets
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: STORAGE_PROVIDER
+              value: s3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dealer-scraper-api
+spec:
+  selector:
+    app: dealer-scraper
+    component: api
+  ports:
+    - port: 80
+      targetPort: 3000
+  type: LoadBalancer
+
+---
+# ─── Worker Deployment ───────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dealer-scraper-workers
+  labels:
+    app: dealer-scraper
+    component: workers
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dealer-scraper
+      component: workers
+  template:
+    metadata:
+      labels:
+        app: dealer-scraper
+        component: workers
+    spec:
+      # Chromium requires significant /dev/shm for rendering
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+      terminationGracePeriodSeconds: 120  # Allow workers to drain current jobs
+
+      containers:
+        - name: workers
+          image: your-registry/dealer-scraper:latest
+          command: ["node", "dist/workers/worker-manager.js"]
+          envFrom:
+            - secretRef:
+                name: dealer-scraper-secrets
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: STORAGE_PROVIDER
+              value: s3
+            - name: MAX_BROWSERS
+              value: "3"
+            - name: DEALER_WORKER_CONCURRENCY
+              value: "10"
+            - name: SCREENSHOT_WORKER_CONCURRENCY
+              value: "15"
+          volumeMounts:
+            - mountPath: /dev/shm
+              name: dshm
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          # No HTTP probes for workers; use BullMQ stalled job detection
+
+---
+# ─── Secrets (populate via CI/CD or sealed-secrets) ─────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dealer-scraper-secrets
+type: Opaque
+stringData:
+  REDIS_URL: "redis://redis-service:6379"
+  DATABASE_URL: "postgresql://postgres:CHANGEME@postgres-service:5432/dealer_scraper"
+  AWS_REGION: "us-east-1"
+  AWS_BUCKET: "dealer-screenshots-prod"
+  AWS_ACCESS_KEY_ID: "CHANGEME"
+  AWS_SECRET_ACCESS_KEY: "CHANGEME"
+  PROXY_URL: ""
