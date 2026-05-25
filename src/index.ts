@@ -3,17 +3,27 @@
  * For production: run API and workers as separate containers/processes.
  * For development: this combined mode is convenient.
  */
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { buildServer } from './api/server'
 import { browserPool } from './browser/pool'
 import { startDealerWorker, stopDealerWorker } from './workers/dealer.worker'
 import { startScreenshotWorker, stopScreenshotWorker } from './workers/screenshot.worker'
 import { closeQueues } from './queue/queues'
-import { closePool } from './db/client'
+import { pool, closePool } from './db/client'
 import { config } from './config'
 import { logger } from './utils/logger'
 
+async function runMigrations() {
+  const sql = readFileSync(join(__dirname, '../src/db/migrations/001_init.sql'), 'utf-8')
+  await pool.query(sql)
+  logger.info('database migrations applied')
+}
+
 async function main() {
   logger.info({ env: config.env }, 'dealer scraper starting')
+
+  await runMigrations()
 
   await browserPool.initialize()
 
