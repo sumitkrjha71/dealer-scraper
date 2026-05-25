@@ -25,8 +25,8 @@ export interface PaginationResult {
 export async function detectPagination(page: Page, url: string): Promise<PaginationResult> {
   const log = logger.child({ url })
 
-  // Give the page a moment to fully render the pagination component
-  await sleep(500)
+  // Wait for SPA frameworks (React/Vue/Angular) to hydrate and render pagination
+  await sleep(3000)
 
   // ── Strategy 1: Numbered pagination ─────────────────────────────────────────
   try {
@@ -84,7 +84,58 @@ export async function detectPagination(page: Page, url: string): Promise<Paginat
     log.debug({ err }, 'load-more check failed')
   }
 
-  // ── Fallback: single page ────────────────────────────────────────────────────
+  // ── Fallback A: total-count URL generator ───────────────────────────────────
+  // If the page shows "X vehicles / listings / results", generate page URLs using
+  // the most common dealer page param even though no pagination DOM was found.
+  try {
+    const totalCount = await page.evaluate(() => {
+      const body = (document.body as HTMLElement).innerText ?? ''
+      const patterns = [
+        /(\d[\d,]*)\s+(?:new\s+|used\s+|certified\s+)?(?:vehicles?|listings?|results?|cars?|trucks?|suvs?|inventory)/i,
+        /showing\s+\d+[–\-]\d+\s+of\s+(\d[\d,]*)/i,
+        /(\d[\d,]*)\s+(?:total\s+)?(?:matches?|found)/i,
+      ]
+      for (const re of patterns) {
+        const m = body.match(re)
+        if (m) return parseInt(m[1].replace(/,/g, ''), 10)
+      }
+      return null
+    })
+
+    if (totalCount && totalCount > 1) {
+      // Detect page size from the number of inventory items visible on this page
+      const visibleItems = await page.evaluate(() => {
+        const selectors = [
+          '[class*="inventory-item"]', '[class*="vehicle-card"]',
+          '[class*="listing-card"]',  '[class*="vehicle-tile"]',
+          '[class*="srp-item"]',      '[class*="result-item"]',
+          'article',
+        ]
+        for (const sel of selectors) {
+          const count = document.querySelectorAll(sel).length
+          if (count >= 3) return count
+        }
+        return 0
+      })
+
+      const pageSize = visibleItems >= 3 ? visibleItems : 24
+      const totalPages = Math.min(Math.ceil(totalCount / pageSize), config.limits.maxPagesPerDealer)
+
+      if (totalPages >= 2) {
+        const { buildPageUrl } = await import('../utils/url')
+        const urls: string[] = []
+        for (let p = 1; p <= totalPages; p++) {
+          urls.push(buildPageUrl(url, p, 'page'))
+        }
+        log.info({ strategy: 'total-count', totalPages, totalCount, pageSize }, 'pagination resolved via total count')
+        return { strategy: 'numbered', urls, totalPages }
+      }
+    }
+  } catch (err) {
+    log.debug({ err }, 'total-count fallback check failed')
+  }
+
+  // ── Fallback B: single page ──────────────────────────────────────────────────
   log.info({ strategy: 'single' }, 'no pagination detected, treating as single page')
   return { strategy: 'single', urls: [url], totalPages: 1 }
 }

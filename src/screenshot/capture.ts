@@ -56,11 +56,22 @@ export async function captureFullPage(page: Page, opts: CaptureOptions): Promise
 
   log.debug({}, 'capturing full-page screenshot')
 
-  const rawBuffer = await page.screenshot({
-    fullPage: true,
-    type: 'png',
-    timeout: config.timeouts.screenshot,
-  })
+  // Try full-page first; fall back to viewport if it OOMs or crashes (common on Railway)
+  let rawBuffer: Buffer
+  try {
+    rawBuffer = await page.screenshot({
+      fullPage: true,
+      type: 'png',
+      timeout: config.timeouts.screenshot,
+    })
+  } catch (fullPageErr) {
+    log.warn({ err: (fullPageErr as Error).message }, 'full-page screenshot failed, falling back to viewport')
+    rawBuffer = await page.screenshot({
+      fullPage: false,
+      type: 'png',
+      timeout: 20000,
+    })
+  }
 
   // Compress: convert to high-quality JPEG to reduce file size ~70%
   const compressed = await sharp(rawBuffer)
@@ -174,16 +185,20 @@ async function waitForNetworkQuiet(page: Page): Promise<void> {
 // ─── Image completion ───────────────────────────────────────────────────────────
 
 async function waitForImages(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    const imgs = Array.from(document.querySelectorAll('img'))
-    const pending = imgs.filter((img) => !img.complete).map(
-      (img) =>
-        new Promise<void>((resolve) => {
-          img.addEventListener('load', () => resolve(), { once: true })
-          img.addEventListener('error', () => resolve(), { once: true })
-          if (img.complete) resolve()
-        }),
-    )
-    await Promise.all(pending)
-  }).catch(() => {})
+  // Cap at 8s — broken/slow image URLs must not block the screenshot indefinitely
+  await Promise.race([
+    page.evaluate(async () => {
+      const imgs = Array.from(document.querySelectorAll('img'))
+      const pending = imgs.filter((img) => !img.complete).map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            img.addEventListener('load', () => resolve(), { once: true })
+            img.addEventListener('error', () => resolve(), { once: true })
+            if (img.complete) resolve()
+          }),
+      )
+      await Promise.all(pending)
+    }).catch(() => {}),
+    sleep(8000),
+  ])
 }

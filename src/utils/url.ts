@@ -41,7 +41,10 @@ export function buildPageUrl(baseUrl: string, page: number, detectedParam?: stri
 
 /** Detect the pagination query parameter used in a URL. */
 export function detectPageParam(u: URL): string | undefined {
-  const candidates = ['page', 'p', 'pg', 'pagenum', 'pageNumber', 'currentPage']
+  const candidates = [
+    'page', 'p', 'pg', 'pagenum', 'pageNumber', 'currentPage',
+    'PageNumber', 'page_num', 'pno', 'pn', 'pag', 'pagenumber',
+  ]
   for (const c of candidates) {
     if (u.searchParams.has(c)) return c
   }
