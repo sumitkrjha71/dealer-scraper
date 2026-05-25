@@ -1,21 +1,16 @@
-/**
- * Unified entry point — runs API server and workers in the same process.
- * For production: run API and workers as separate containers/processes.
- * For development: this combined mode is convenient.
- */
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { buildServer } from './api/server'
 import { browserPool } from './browser/pool'
-import { startDealerWorker, stopDealerWorker } from './workers/dealer.worker'
-import { startScreenshotWorker, stopScreenshotWorker } from './workers/screenshot.worker'
+import { startDealerWorker } from './workers/dealer.worker'
+import { startScreenshotWorker } from './workers/screenshot.worker'
 import { closeQueues } from './queue/queues'
 import { pool, closePool } from './db/client'
 import { config } from './config'
 import { logger } from './utils/logger'
+import type { Worker } from 'bullmq'
 
 async function runMigrations() {
-  // Try dist/db/migrations first, fall back to src/ for local dev
   let sql: string
   try {
     sql = readFileSync(join(__dirname, 'db/migrations/001_init.sql'), 'utf-8')
@@ -31,30 +26,31 @@ async function main() {
 
   await runMigrations()
 
-  // Start HTTP server first — Railway health check must pass immediately
+  // Server starts first — Railway health check passes immediately
   const app = await buildServer()
   await app.listen({ port: config.port, host: '0.0.0.0' })
-  logger.info({ port: config.port }, 'server listening — initialising browser in background')
+  logger.info({ port: config.port }, 'server listening')
 
-  // Browser pool init runs in the background so it never blocks HTTP requests
-  // If Chrome fails to launch the server stays up and jobs fail gracefully
-  ;(async () => {
-    try {
-      await browserPool.initialize()
-      startDealerWorker()
-      startScreenshotWorker()
-      logger.info('browser pool ready — workers started')
-    } catch (err) {
-      logger.error({ err }, 'browser pool failed to initialise — screenshot jobs will fail until restart')
-    }
-  })()
+  // Workers are initialised after server is up; kept in outer scope for shutdown
+  let dealerWorker: Worker | undefined
+  let screenshotWorker: Worker | undefined
+
+  try {
+    await browserPool.initialize()
+    dealerWorker = startDealerWorker()
+    screenshotWorker = startScreenshotWorker()
+    logger.info('workers started')
+  } catch (err) {
+    logger.error({ err }, 'browser pool failed to initialise — restarting')
+    process.exit(1)
+  }
 
   async function shutdown(signal: string) {
     logger.info({ signal }, 'shutting down')
     await Promise.allSettled([
       app.close(),
-      dealerWorker.close(),
-      screenshotWorker.close(),
+      dealerWorker?.close(),
+      screenshotWorker?.close(),
     ])
     await browserPool.destroy()
     await closeQueues()
@@ -63,7 +59,7 @@ async function main() {
   }
 
   process.on('SIGTERM', () => shutdown('SIGTERM'))
-  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGINT',  () => shutdown('SIGINT'))
   process.on('uncaughtException', (err) => {
     logger.error({ err }, 'uncaught exception')
     shutdown('uncaughtException').catch(() => process.exit(1))
