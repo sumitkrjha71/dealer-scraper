@@ -11,10 +11,9 @@ const USER_AGENTS = [
 
 // Common screen resolutions to appear human
 const VIEWPORTS = [
-  { width: 1920, height: 1080 },
-  { width: 1440, height: 900 },
   { width: 1366, height: 768 },
-  { width: 2560, height: 1440 },
+  { width: 1440, height: 900 },
+  { width: 1280, height: 800 },
 ]
 
 export function randomUserAgent(): string {

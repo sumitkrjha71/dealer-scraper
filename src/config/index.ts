@@ -10,14 +10,14 @@ const env = cleanEnv(process.env, {
   REDIS_URL: str({ default: 'redis://localhost:6379' }),
   DATABASE_URL: str({ default: 'postgresql://postgres:postgres@localhost:5432/dealer_scraper' }),
 
-  MAX_BROWSERS: num({ default: 3 }),
-  MAX_PAGES_PER_BROWSER: num({ default: 5 }),
-  BROWSER_RECYCLE_AFTER: num({ default: 50 }),
+  MAX_BROWSERS: num({ default: 1 }),
+  MAX_PAGES_PER_BROWSER: num({ default: 2 }),
+  BROWSER_RECYCLE_AFTER: num({ default: 20 }),
 
-  DEALER_WORKER_CONCURRENCY: num({ default: 10 }),
-  SCREENSHOT_WORKER_CONCURRENCY: num({ default: 20 }),
+  DEALER_WORKER_CONCURRENCY: num({ default: 2 }),
+  SCREENSHOT_WORKER_CONCURRENCY: num({ default: 2 }),
 
-  PAGE_LOAD_TIMEOUT: num({ default: 30000 }),
+  PAGE_LOAD_TIMEOUT: num({ default: 60000 }),
   NETWORK_IDLE_TIMEOUT: num({ default: 10000 }),
   SCREENSHOT_TIMEOUT: num({ default: 60000 }),
   INFINITE_SCROLL_WAIT_MS: num({ default: 3000 }),
