@@ -14,7 +14,7 @@ const env = cleanEnv(process.env, {
   MAX_PAGES_PER_BROWSER: num({ default: 2 }),
   BROWSER_RECYCLE_AFTER: num({ default: 20 }),
 
-  DEALER_WORKER_CONCURRENCY: num({ default: 2 }),
+  DEALER_WORKER_CONCURRENCY: num({ default: 10 }),
   SCREENSHOT_WORKER_CONCURRENCY: num({ default: 2 }),
 
   PAGE_LOAD_TIMEOUT: num({ default: 60000 }),

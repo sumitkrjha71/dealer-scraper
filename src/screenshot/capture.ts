@@ -30,10 +30,21 @@ export async function captureFullPage(page: Page, opts: CaptureOptions): Promise
 
   log.debug({}, 'navigating to page')
 
-  await page.goto(opts.url, {
-    waitUntil: 'domcontentloaded',
-    timeout: config.timeouts.pageLoad,
-  })
+  // Try to wait for full load; fall back to domcontentloaded on heavy sites
+  try {
+    await page.goto(opts.url, { waitUntil: 'load', timeout: config.timeouts.pageLoad })
+  } catch {
+    try {
+      await page.goto(opts.url, { waitUntil: 'domcontentloaded', timeout: config.timeouts.pageLoad })
+    } catch (navErr) {
+      // If navigation itself fails completely, try a bare goto and screenshot whatever loaded
+      log.warn({ err: (navErr as Error).message }, 'navigation failed, attempting bare goto')
+      await page.goto(opts.url, { waitUntil: 'commit', timeout: 15000 }).catch(() => {})
+    }
+  }
+
+  // Extra wait for SPAs (React/Vue/Angular) to finish rendering after navigation
+  await sleep(2500)
 
   // Wait for Cloudflare / bot-verification challenge to auto-resolve before anything else
   const botBlocked = await waitForBotChallenge(page, log)
@@ -52,7 +63,7 @@ export async function captureFullPage(page: Page, opts: CaptureOptions): Promise
 
   // Scroll back to top so the screenshot starts from position 0
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
-  await sleep(300)
+  await sleep(500)
 
   log.debug({}, 'capturing full-page screenshot')
 
