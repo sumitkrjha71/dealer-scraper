@@ -10,6 +10,19 @@ import { config } from './config'
 import { logger } from './utils/logger'
 import type { Worker } from 'bullmq'
 
+async function waitForDb(maxAttempts = 10, delayMs = 3000): Promise<void> {
+  for (let i = 1; i <= maxAttempts; i++) {
+    try {
+      await pool.query('SELECT 1')
+      return
+    } catch (err) {
+      logger.warn({ attempt: i, maxAttempts }, 'database not ready yet, retrying...')
+      if (i === maxAttempts) throw err
+      await new Promise((r) => setTimeout(r, delayMs))
+    }
+  }
+}
+
 async function runMigrations() {
   let sql: string
   try {
@@ -21,29 +34,59 @@ async function runMigrations() {
   logger.info('database migrations applied')
 }
 
+async function initWorkersInBackground(
+  onReady: (dw: Worker, sw: Worker) => void,
+) {
+  // Retry browser init up to 3 times with 10s gaps before giving up
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      logger.info({ attempt }, 'initialising browser pool')
+      await browserPool.initialize()
+      const dw = startDealerWorker()
+      const sw = startScreenshotWorker()
+      logger.info('workers started')
+      onReady(dw, sw)
+      return
+    } catch (err) {
+      logger.error({ err, attempt }, 'browser pool init failed')
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 10_000))
+        try { await browserPool.destroy() } catch { /* ignore */ }
+      }
+    }
+  }
+  logger.error('all browser pool init attempts exhausted — screenshot jobs will fail')
+}
+
 async function main() {
   logger.info({ env: config.env }, 'dealer scraper starting')
 
-  await runMigrations()
-
-  // Server starts first — Railway health check passes immediately
+  // 1. Start HTTP server FIRST — Railway health check must pass before anything else
   const app = await buildServer()
   await app.listen({ port: config.port, host: '0.0.0.0' })
   logger.info({ port: config.port }, 'server listening')
 
-  // Workers are initialised after server is up; kept in outer scope for shutdown
+  // 2. Workers held here so shutdown() can close them
   let dealerWorker: Worker | undefined
   let screenshotWorker: Worker | undefined
 
-  try {
-    await browserPool.initialize()
-    dealerWorker = startDealerWorker()
-    screenshotWorker = startScreenshotWorker()
-    logger.info('workers started')
-  } catch (err) {
-    logger.error({ err }, 'browser pool failed to initialise — restarting')
-    process.exit(1)
-  }
+  // 3. DB + migrations in background (don't block health check)
+  ;(async () => {
+    try {
+      await waitForDb()
+      await runMigrations()
+    } catch (err) {
+      logger.error({ err }, 'database setup failed')
+      // Server stays up; DB-dependent endpoints will error naturally
+      return
+    }
+
+    // 4. Browser pool + workers — completely non-blocking
+    initWorkersInBackground((dw, sw) => {
+      dealerWorker = dw
+      screenshotWorker = sw
+    }).catch((err) => logger.error({ err }, 'worker init crashed'))
+  })()
 
   async function shutdown(signal: string) {
     logger.info({ signal }, 'shutting down')
