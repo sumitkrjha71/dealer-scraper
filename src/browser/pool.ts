@@ -83,6 +83,22 @@ class BrowserPool {
       '--disable-gpu',
       '--disable-accelerated-2d-canvas',
       '--window-size=1366,768',
+      // Memory / stability for constrained containers
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-default-apps',
+      '--disable-sync',
+      '--disable-translate',
+      '--disable-hang-monitor',
+      '--disable-ipc-flooding-protection',
+      '--metrics-recording-only',
+      '--no-first-run',
+      '--safebrowsing-disable-auto-update',
+      '--password-store=basic',
+      '--use-mock-keychain',
     ]
 
     const browser = await chromium.launch({

@@ -5,6 +5,7 @@ import { logger } from '../utils/logger'
 import { healthRoutes } from './routes/health'
 import { jobRoutes } from './routes/jobs'
 import { screenshotRoutes } from './routes/screenshots'
+import { debugRoutes } from './routes/debug'
 import { closePool } from '../db/client'
 import { closeQueues } from '../queue/queues'
 
@@ -39,6 +40,7 @@ export async function buildServer() {
   await app.register(healthRoutes)
   await app.register(jobRoutes, { prefix: '/api/v1' })
   await app.register(screenshotRoutes, { prefix: '/api/v1' })
+  await app.register(debugRoutes, { prefix: '/api/v1' })
 
   // ── Global error handler ────────────────────────────────────────────────────
   app.setErrorHandler((err, req, reply) => {
