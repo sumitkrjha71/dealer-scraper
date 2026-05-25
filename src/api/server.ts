@@ -19,15 +19,9 @@ export async function buildServer() {
     trustProxy: true,
   })
 
-  // Allow requests from the Vercel dashboard and local dev
+  // Allow all origins — dashboard can be on any domain
   await app.register(cors, {
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      /\.vercel\.app$/,
-      /\.railway\.app$/,
-      process.env.DASHBOARD_URL ?? '',
-    ].filter(Boolean),
+    origin: true,
     credentials: true,
   })
 

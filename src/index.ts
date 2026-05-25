@@ -31,18 +31,23 @@ async function main() {
 
   await runMigrations()
 
-  // Start HTTP server first — Railway health check must pass before browser init
+  // Start HTTP server first — Railway health check must pass immediately
   const app = await buildServer()
   await app.listen({ port: config.port, host: '0.0.0.0' })
-  logger.info({ port: config.port }, 'server listening')
+  logger.info({ port: config.port }, 'server listening — initialising browser in background')
 
-  // Browser pool + workers start after server is up
-  await browserPool.initialize()
-
-  const dealerWorker = startDealerWorker()
-  const screenshotWorker = startScreenshotWorker()
-
-  logger.info({ port: config.port }, 'dealer scraper ready')
+  // Browser pool init runs in the background so it never blocks HTTP requests
+  // If Chrome fails to launch the server stays up and jobs fail gracefully
+  ;(async () => {
+    try {
+      await browserPool.initialize()
+      startDealerWorker()
+      startScreenshotWorker()
+      logger.info('browser pool ready — workers started')
+    } catch (err) {
+      logger.error({ err }, 'browser pool failed to initialise — screenshot jobs will fail until restart')
+    }
+  })()
 
   async function shutdown(signal: string) {
     logger.info({ signal }, 'shutting down')
