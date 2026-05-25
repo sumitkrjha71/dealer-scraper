@@ -53,8 +53,13 @@ class Semaphore {
 class BrowserPool {
   private slots: BrowserSlot[] = []
   private semaphore: Semaphore
-  private initialized = false
+  // 'idle' | 'initializing' | 'ready' | 'failed'
+  private state: 'idle' | 'initializing' | 'ready' | 'failed' = 'idle'
+  private initPromise: Promise<void> | null = null
   private slotLock = false
+
+  // Keep for backward-compat with debug endpoint
+  get initialized() { return this.state === 'ready' }
 
   constructor() {
     const totalPages = config.browser.maxBrowsers * config.browser.maxPagesPerBrowser
@@ -62,17 +67,28 @@ class BrowserPool {
   }
 
   async initialize(): Promise<void> {
-    if (this.initialized) return
-    this.initialized = true
+    if (this.state === 'ready') return
+    // If already initializing, wait for that to finish rather than double-launching
+    if (this.initPromise) return this.initPromise
+    this.initPromise = this._doInit().finally(() => { this.initPromise = null })
+    return this.initPromise
+  }
 
+  private async _doInit(): Promise<void> {
+    this.state = 'initializing'
     logger.info({ maxBrowsers: config.browser.maxBrowsers }, 'initializing browser pool')
-
-    for (let i = 0; i < config.browser.maxBrowsers; i++) {
-      const slot = await this.spawnBrowser(i)
-      this.slots.push(slot)
+    try {
+      for (let i = 0; i < config.browser.maxBrowsers; i++) {
+        const slot = await this.spawnBrowser(i)
+        this.slots.push(slot)
+      }
+      this.state = 'ready'
+      logger.info('browser pool ready')
+    } catch (err) {
+      this.state = 'failed'
+      this.slots = []
+      throw err
     }
-
-    logger.info('browser pool ready')
   }
 
   private async spawnBrowser(id: number): Promise<BrowserSlot> {
@@ -117,6 +133,9 @@ class BrowserPool {
   }
 
   async acquire(): Promise<BrowserPage> {
+    // Lazy-init: launch Chrome on first use rather than at startup
+    if (this.state !== 'ready') await this.initialize()
+
     await this.semaphore.acquire()
 
     const slot = await this.getAvailableSlot()
@@ -193,7 +212,8 @@ class BrowserPool {
   async destroy(): Promise<void> {
     await Promise.allSettled(this.slots.map((s) => s.browser.close()))
     this.slots = []
-    this.initialized = false
+    this.state = 'idle'
+    this.initPromise = null
     logger.info('browser pool destroyed')
   }
 }

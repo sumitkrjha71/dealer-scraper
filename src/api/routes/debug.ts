@@ -4,7 +4,6 @@ import { dealerQueue, screenshotQueue } from '../../queue/queues'
 import { browserPool } from '../../browser/pool'
 
 export async function debugRoutes(app: FastifyInstance) {
-  // Quick status dump — call this from browser to diagnose production issues
   app.get('/debug/status', async () => {
     const [pageJobStats] = await query<{
       pending: string; processing: string; completed: string; failed: string
@@ -17,12 +16,6 @@ export async function debugRoutes(app: FastifyInstance) {
        FROM page_jobs`,
     ).catch(() => [{ pending: '?', processing: '?', completed: '?', failed: '?' }])
 
-    const recentErrors = await query<{ page_url: string; error_message: string; created_at: string }>(
-      `SELECT page_url, error_message, created_at
-       FROM page_jobs WHERE status = 'failed'
-       ORDER BY created_at DESC LIMIT 10`,
-    ).catch(() => [])
-
     const [dealerStats] = await query<{
       pending: string; processing: string; completed: string; failed: string
     }>(
@@ -34,23 +27,34 @@ export async function debugRoutes(app: FastifyInstance) {
        FROM dealer_jobs`,
     ).catch(() => [{ pending: '?', processing: '?', completed: '?', failed: '?' }])
 
-    let queueCounts = { dealer: {}, screenshot: {} }
+    const [screenshotCount] = await query<{ total: string }>(
+      `SELECT COUNT(*) AS total FROM screenshots`,
+    ).catch(() => [{ total: '?' }])
+
+    const recentErrors = await query<{ page_url: string; error_message: string; error_class: string; created_at: string }>(
+      `SELECT page_url, error_message, error_class, created_at
+       FROM page_jobs WHERE status = 'failed' AND error_message IS NOT NULL
+       ORDER BY created_at DESC LIMIT 10`,
+    ).catch(() => [])
+
+    let queueCounts = { dealer: {} as Record<string, number>, screenshot: {} as Record<string, number> }
     try {
       const [d, s] = await Promise.all([
         dealerQueue.getJobCounts(),
         screenshotQueue.getJobCounts(),
       ])
       queueCounts = { dealer: d, screenshot: s }
-    } catch { /* redis might be unavailable */ }
+    } catch { /* redis unavailable */ }
 
     return {
+      browser_pool_state: (browserPool as unknown as { state: string }).state ?? 'unknown',
       db: {
         dealer_jobs: dealerStats,
         page_jobs: pageJobStats,
+        screenshots_total: screenshotCount.total,
       },
-      queues: queueCounts,
-      recent_errors: recentErrors,
-      browser_pool: (browserPool as unknown as { initialized: boolean }).initialized ?? 'unknown',
+      redis_queues: queueCounts,
+      recent_page_job_errors: recentErrors,
     }
   })
 }
