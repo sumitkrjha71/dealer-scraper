@@ -77,23 +77,12 @@ class BrowserPool {
 
   private async spawnBrowser(id: number): Promise<BrowserSlot> {
     const launchArgs = [
-      '--disable-dev-shm-usage',       // critical for Docker — uses /tmp instead of /dev/shm
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-accelerated-2d-canvas',
+      '--disable-dev-shm-usage',
       '--disable-gpu',
+      '--disable-accelerated-2d-canvas',
       '--window-size=1366,768',
-      '--disable-extensions',
-      '--disable-background-networking',
-      '--disable-default-apps',
-      '--disable-sync',
-      '--disable-translate',
-      '--mute-audio',
-      '--no-first-run',
-      '--single-process',              // run renderer inside browser process — saves ~150MB RAM
-      '--disable-renderer-backgrounding',
-      '--disable-backgrounding-occluded-windows',
-      // NOTE: do NOT add --js-flags=--max-old-space-size=N — it crashes heavy JS sites
     ]
 
     const browser = await chromium.launch({

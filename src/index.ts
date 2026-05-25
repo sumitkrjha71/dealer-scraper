@@ -25,13 +25,16 @@ async function main() {
 
   await runMigrations()
 
+  // Start HTTP server first — Railway health check must pass before browser init
+  const app = await buildServer()
+  await app.listen({ port: config.port, host: '0.0.0.0' })
+  logger.info({ port: config.port }, 'server listening')
+
+  // Browser pool + workers start after server is up
   await browserPool.initialize()
 
   const dealerWorker = startDealerWorker()
   const screenshotWorker = startScreenshotWorker()
-
-  const app = await buildServer()
-  await app.listen({ port: config.port, host: '0.0.0.0' })
 
   logger.info({ port: config.port }, 'dealer scraper ready')
 

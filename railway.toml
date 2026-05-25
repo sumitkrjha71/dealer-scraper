@@ -6,4 +6,4 @@ dockerfilePath = "Dockerfile"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
 healthcheckPath = "/healthz"
-healthcheckTimeout = 30
+healthcheckTimeout = 120
