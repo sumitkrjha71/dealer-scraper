@@ -15,7 +15,13 @@ import { config } from './config'
 import { logger } from './utils/logger'
 
 async function runMigrations() {
-  const sql = readFileSync(join(__dirname, '../src/db/migrations/001_init.sql'), 'utf-8')
+  // Try dist/db/migrations first, fall back to src/ for local dev
+  let sql: string
+  try {
+    sql = readFileSync(join(__dirname, 'db/migrations/001_init.sql'), 'utf-8')
+  } catch {
+    sql = readFileSync(join(__dirname, '../src/db/migrations/001_init.sql'), 'utf-8')
+  }
   await pool.query(sql)
   logger.info('database migrations applied')
 }
