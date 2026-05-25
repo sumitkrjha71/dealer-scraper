@@ -25,13 +25,15 @@ export function classifyError(err: unknown): RetryableError {
   if (message.includes('timeout') || message.includes('timed out')) {
     errorClass = 'timeout'
     retryable = true
+  } else if (message.includes('page crashed') || message.includes('target closed') || message.includes('execution context was destroyed')) {
+    // Browser/renderer crash — always retry, not a permanent failure
+    errorClass = 'network_error'
+    retryable = true
   } else if (
     message.includes('cloudflare') ||
     message.includes('403') ||
     message.includes('access denied') ||
-    message.includes('bot') ||
-    message.includes('captcha') ||
-    message.includes('challenge')
+    message.includes('captcha')
   ) {
     errorClass = 'bot_blocked'
     // Bot blocks are retryable with proxy rotation, not raw retries

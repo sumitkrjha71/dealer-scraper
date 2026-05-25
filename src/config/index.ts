@@ -11,11 +11,11 @@ const env = cleanEnv(process.env, {
   DATABASE_URL: str({ default: 'postgresql://postgres:postgres@localhost:5432/dealer_scraper' }),
 
   MAX_BROWSERS: num({ default: 1 }),
-  MAX_PAGES_PER_BROWSER: num({ default: 2 }),
-  BROWSER_RECYCLE_AFTER: num({ default: 20 }),
+  MAX_PAGES_PER_BROWSER: num({ default: 1 }),
+  BROWSER_RECYCLE_AFTER: num({ default: 10 }),
 
   DEALER_WORKER_CONCURRENCY: num({ default: 10 }),
-  SCREENSHOT_WORKER_CONCURRENCY: num({ default: 2 }),
+  SCREENSHOT_WORKER_CONCURRENCY: num({ default: 1 }),
 
   PAGE_LOAD_TIMEOUT: num({ default: 60000 }),
   NETWORK_IDLE_TIMEOUT: num({ default: 10000 }),
