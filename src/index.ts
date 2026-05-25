@@ -34,18 +34,15 @@ async function runMigrations() {
   logger.info('database migrations applied')
 }
 
-async function initWorkersInBackground(
-  onReady: (dw: Worker, sw: Worker) => void,
-) {
-  // Retry browser init up to 3 times with 10s gaps before giving up
+async function initBrowserWorker(onReady: (sw: Worker) => void): Promise<void> {
+  // Retry Chrome launch up to 3 times — it can fail on first boot in constrained containers
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       logger.info({ attempt }, 'initialising browser pool')
       await browserPool.initialize()
-      const dw = startDealerWorker()
       const sw = startScreenshotWorker()
-      logger.info('workers started')
-      onReady(dw, sw)
+      logger.info('screenshot worker started')
+      onReady(sw)
       return
     } catch (err) {
       logger.error({ err, attempt }, 'browser pool init failed')
@@ -61,31 +58,33 @@ async function initWorkersInBackground(
 async function main() {
   logger.info({ env: config.env }, 'dealer scraper starting')
 
-  // 1. Start HTTP server FIRST — Railway health check must pass before anything else
+  // 1. HTTP server first — Railway health check passes before anything else
   const app = await buildServer()
   await app.listen({ port: config.port, host: '0.0.0.0' })
   logger.info({ port: config.port }, 'server listening')
 
-  // 2. Workers held here so shutdown() can close them
+  // Outer-scope refs so shutdown() can close them
   let dealerWorker: Worker | undefined
   let screenshotWorker: Worker | undefined
 
-  // 3. DB + migrations in background (don't block health check)
+  // 2. DB → migrations → workers, all in background (never blocks health check)
   ;(async () => {
     try {
       await waitForDb()
       await runMigrations()
     } catch (err) {
-      logger.error({ err }, 'database setup failed')
-      // Server stays up; DB-dependent endpoints will error naturally
+      logger.error({ err }, 'database setup failed — workers not starting')
       return
     }
 
-    // 4. Browser pool + workers — completely non-blocking
-    initWorkersInBackground((dw, sw) => {
-      dealerWorker = dw
+    // 3. Dealer worker starts immediately — it only uses DB + Redis, no browser
+    dealerWorker = startDealerWorker()
+    logger.info('dealer worker started')
+
+    // 4. Screenshot worker starts after browser pool is ready (Chrome may take a moment)
+    initBrowserWorker((sw) => {
       screenshotWorker = sw
-    }).catch((err) => logger.error({ err }, 'worker init crashed'))
+    }).catch((err) => logger.error({ err }, 'browser worker init crashed'))
   })()
 
   async function shutdown(signal: string) {
